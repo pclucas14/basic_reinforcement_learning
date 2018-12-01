@@ -37,7 +37,7 @@ class Cell(cellular.Cell):
 class Agent(cellular.Agent):
     def __init__(self, world):
         self.ai = e_sarsa.Sarsa(
-            range(directions), world, epsilon=0.1, alpha=0.1, gamma=0.9, algo=sys.argv[1])
+            range(directions), world, epsilon=0.9, alpha=0.1, gamma=0.9, algo=sys.argv[1])
         self.lastAction = None
         self.score = 0
         self.deads = 0
@@ -90,7 +90,7 @@ if startCell is None:
 agent = Agent(world)
 world.addAgent(agent, cell=startCell)
 
-pretraining = 200000
+pretraining = 250000
 for i in range(pretraining):
     if i % 1000 == 0:
         print i, agent.score, agent.deads
@@ -99,6 +99,10 @@ for i in range(pretraining):
     world.update()
 
 print(agent.ai.q)
+print('\n\n\n')
+print(agent.ai.betas.squeeze().T)
+print('\n\n\n')
+print(agent.ai.state_history.T)
 world.display.activate(size=30)
 world.display.delay = 1
 while 1:
