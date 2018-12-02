@@ -15,7 +15,7 @@ class Sarsa:
         self.state_history = np.zeros((world.width, world.height))
 
         if algo == 'h_trace' and learn_beta:
-            self.betas = np.zeros((world.width, world.height))
+            self.betas = np.ones((world.width, world.height))
 
         print('using eligibility traces : {}'.format('trace' in algo))
         self.epsilon = epsilon
@@ -67,8 +67,8 @@ class Sarsa:
 
     def update_betas(self, state, q_hat, q_tilde, target):
         state = (state[0] - 1, state[1] - 1)
-        
-        mse = (q_tilde - target) ** 2
+        mse = (self.prev_value - target)**2 - (q_hat -target)**2
+        mse = max(0,mse)
         target = mse / (mse + VARIANCE_COST)
         self.betas[state] = self.alpha * target + (1 - self.alpha) * self.betas[state]
         # beta = alpha*(MSE(V_tilde) / (MSE(V_tilde)  + VAR)) + (1-alpha)*beta
@@ -83,16 +83,18 @@ class Sarsa:
         elif self.algo == 'h_trace':  
             self.update_trace(state, action)
             q = self.getQ(state, action)
+            beta = self.betas[state]
+
             if self.prev_value is None:
                 q_tilde = q 
             else:
-                beta = self.trace_coef
                 q_tilde = (1 - beta) * self.prev_value + beta * q
 
-            delta = target - q_tilde
+            delta = (target - q_tilde)
+
             self.q += self.alpha * delta * self.trace
 
-            self.prev_value = q_tilde
+            self.prev_value = q_tilde - reward
 
             # we update the betas at the end 
             if self.learn_beta: 
@@ -113,7 +115,7 @@ class Sarsa:
             q = [self.getQ(state, a) for a in self.actions]
             if self.algo == 'h_trace':
                 if self.prev_value_for_choosing_a is not None:
-                    beta = self.trace_coef
+                    beta = self.betas[state]
                     q = [(1 - beta) * self.prev_value_for_choosing_a + beta * q_sa for q_sa in q]
 
             maxQ = max(q)

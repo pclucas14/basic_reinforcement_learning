@@ -37,7 +37,7 @@ class Cell(cellular.Cell):
 class Agent(cellular.Agent):
     def __init__(self, world):
         self.ai = e_sarsa.Sarsa(
-            range(directions), world, epsilon=0.9, alpha=0.1, gamma=0.9, algo=sys.argv[1])
+            range(directions), world, epsilon=0.3, alpha=0.1, gamma=0.9, algo=sys.argv[1])
         self.lastAction = None
         self.score = 0
         self.deads = 0
