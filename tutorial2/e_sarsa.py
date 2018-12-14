@@ -1,21 +1,23 @@
 import random
 import numpy as np
-np.set_printoptions(precision=2) 
+np.set_printoptions(precision=2, suppress=True) 
+
 
 # Sarsa with Eligibility Traces, Sarsa(\lambda)
 # I'm moving away from the dictionary setup, as it's suboptimal for traces.
 
-VARIANCE_COST = 100
+def sigmoid(x):
+    return np.exp(-np.logaddexp(0, -x))
 
 class Sarsa:
-    def __init__(self, actions, world, epsilon=0.4, alpha=0.1, gamma=0.9, trace_coef=0.7, init_value=0, algo='e_trace', learn_beta=True):
+    def __init__(self, actions, world, epsilon=0.4, alpha=0.1, gamma=0.9, trace_coef=0.7, init_value=0, algo='e_trace', learn_beta=True, vc=1e-5):
         self.q = np.zeros((world.width, world.height, len(actions))) + init_value
         self.trace = np.zeros((world.width, world.height, len(actions)))
 
         self.state_history = np.zeros((world.width, world.height))
 
         if algo == 'h_trace' and learn_beta:
-            self.betas = np.ones((world.width, world.height))
+            self.betas = np.zeros((world.width, world.height)) #* 10000
 
         print('using eligibility traces : {}'.format('trace' in algo))
         self.epsilon = epsilon
@@ -25,7 +27,8 @@ class Sarsa:
         self.trace_coef = trace_coef # lambda or beta, depending
         self.algo = algo
         self.init_value = init_value
-        self.learn_beta = learn_beta        
+        self.learn_beta = learn_beta       
+        self.vc  = vc
 
         # I keep two previous values. One for learning Q, and one for choosing actions
         # they will be equivalent when performing online training, however will differ when evaluating
@@ -58,21 +61,42 @@ class Sarsa:
             self.trace[state][action] += 1
         elif self.algo == 'h_trace':
             if self.learn_beta: 
-                self.trace = (1 - np.expand_dims(self.betas, -1)) * self.trace # * self.gamma
-                self.trace[state][action] += self.betas[state]
+                self.trace = (1 - np.expand_dims(sigmoid(self.betas), -1)) * self.trace  #* self.gamma
+                self.trace[state][action] += sigmoid(self.betas[state])
             else:
                 beta = self.trace_coef
-                self.trace = (1 - beta) * self.trace # * self.gamma
+                self.trace = (1 - beta) * self.trace  #* self.gamma
                 self.trace[state][action] += beta
 
     def update_betas(self, state, q_hat, q_tilde, target):
         state = (state[0] - 1, state[1] - 1)
-        mse = (self.prev_value - target)**2 - (q_hat -target)**2
-        mse = max(0,mse)
-        target = mse / (mse + VARIANCE_COST)
-        self.betas[state] = self.alpha * target + (1 - self.alpha) * self.betas[state]
+        #mse = (self.prev_value - target)**2 - (q_hat -target)**2
+        #mse = max(0,mse)
+
+        # reverting back
+        #mse = (q_tilde - target) ** 2
+
+        #target = mse / (mse + self.vc)
+        #self.betas[state] = self.alpha * target + (1 - self.alpha) * self.betas[state]
         # beta = alpha*(MSE(V_tilde) / (MSE(V_tilde)  + VAR)) + (1-alpha)*beta
 
+        # useful quantities
+        if self.prev_value is None:
+            return 
+
+        state_beta = sigmoid(self.betas[state])
+        sig_state_beta = sigmoid(state_beta)
+        prev_value = self.prev_value
+
+        CLIP = 0.05
+        derivative = (sig_state_beta)*(1 - sig_state_beta)*( (q_tilde - target) * (q_hat - prev_value) + self.vc)
+
+        derivative = max(-CLIP, min(CLIP, derivative))
+       
+        # self.betas[state] = self.alpha * -derivative + (1 - self.alpha) * self.betas[state]
+        self.betas[state] -= self.alpha * derivative 
+        
+    
     def learnQ(self, state, action, reward, target):
         # SARSA(lambda) or SARSA(beta)
         if self.algo == 'e_trace':
@@ -83,7 +107,9 @@ class Sarsa:
         elif self.algo == 'h_trace':  
             self.update_trace(state, action)
             q = self.getQ(state, action)
-            beta = self.betas[state]
+            beta = sigmoid(self.betas[state])
+
+            assert 0. <= beta <= 1.
 
             if self.prev_value is None:
                 q_tilde = q 
@@ -94,11 +120,12 @@ class Sarsa:
 
             self.q += self.alpha * delta * self.trace
 
-            self.prev_value = q_tilde - reward
 
             # we update the betas at the end 
             if self.learn_beta: 
                 self.update_betas(state, q, q_tilde, target)
+            
+            self.prev_value = q_tilde - reward
 
         # regular setup
         else: 
@@ -115,7 +142,7 @@ class Sarsa:
             q = [self.getQ(state, a) for a in self.actions]
             if self.algo == 'h_trace':
                 if self.prev_value_for_choosing_a is not None:
-                    beta = self.betas[state]
+                    beta = sigmoid(self.betas[state])
                     q = [(1 - beta) * self.prev_value_for_choosing_a + beta * q_sa for q_sa in q]
 
             maxQ = max(q)

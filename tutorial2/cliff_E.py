@@ -2,8 +2,22 @@ import cellular
 import e_sarsa
 import time
 import sys
+import numpy as np
 
 startCell = None
+
+def pp(arr):
+    betas = np.array_repr(arr).split('\n') 
+    out = []
+    for i in range(len(betas)):
+        if i % 2 == 1 : 
+            curr += ' ' + betas[i].strip()
+        else:
+            if i > 0 : out += [curr]
+            curr = betas[i].strip()
+    
+    for piece in out:
+        print(piece.replace('array', '').replace('(', '').replace(')', '').replace('[[', '['))
 
 
 class Cell(cellular.Cell):
@@ -35,9 +49,9 @@ class Cell(cellular.Cell):
 
 
 class Agent(cellular.Agent):
-    def __init__(self, world):
+    def __init__(self, world, vc):
         self.ai = e_sarsa.Sarsa(
-            range(directions), world, epsilon=0.3, alpha=0.1, gamma=0.9, algo=sys.argv[1])
+            range(directions), world, epsilon=0.2, alpha=0.1, gamma=0.9, algo='h_trace', vc=vc)
         self.lastAction = None
         self.score = 0
         self.deads = 0
@@ -77,33 +91,30 @@ class Agent(cellular.Agent):
             return normalReward
 
 
-normalReward = -1
-cliffReward = -100
-goalReward = 50
+for vc in [0, 100, 10000]:
+    normalReward = -1
+    cliffReward = -100
+    goalReward = 50
 
-directions = 4
-world = cellular.World(Cell, directions=directions, filename='../worlds/cliff.txt')
+    directions = 4
+    world = cellular.World(Cell, directions=directions, filename='../worlds/cliff.txt')
 
-if startCell is None:
-    print "You must indicate where the agent starts by putting a 'S' in the map file"
-    sys.exit()
-agent = Agent(world)
-world.addAgent(agent, cell=startCell)
+    if startCell is None:
+        print "You must indicate where the agent starts by putting a 'S' in the map file"
+        sys.exit()
+    agent = Agent(world, vc)
+    world.addAgent(agent, cell=startCell)
 
-pretraining = 250000
-for i in range(pretraining):
-    if i % 1000 == 0:
-        print i, agent.score, agent.deads
-        agent.score = 0
-        agent.deads = 0
-    world.update()
 
-print(agent.ai.q)
-print('\n\n\n')
-print(agent.ai.betas.squeeze().T)
-print('\n\n\n')
-print(agent.ai.state_history.T)
-world.display.activate(size=30)
-world.display.delay = 1
-while 1:
-    world.update()
+    pretraining = 1000000
+    for i in range(pretraining):
+        if i % 100000 == 0:
+            print i, agent.score, agent.deads
+            pp(e_sarsa.sigmoid(agent.ai.betas.squeeze().T))
+            pp(agent.ai.q.mean(axis=-1).squeeze().T)
+            agent.score = 0
+            agent.deads = 0
+        world.update()
+
+    # print(agent.ai.state_history.T)
+    np.save('beta_maps/%d' % vc, agent.ai.betas.squeeze().T)
